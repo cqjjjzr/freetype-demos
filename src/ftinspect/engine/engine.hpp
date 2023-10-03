@@ -76,6 +76,7 @@ public:
 
   //////// Actions
 
+  void loadFontWithFTCId(FTC_FaceID ftcId);
   int loadFont(int fontIndex,
                long faceIndex,
                int namedInstanceIndex); // Return number of glyphs.
@@ -291,6 +292,7 @@ private:
   void switchNamedInstance(int index);
 
   // It is safe to put the implementation into the corresponding cpp file.
+  // Note: no rendering / writing should be done in the callback
   template <class Func>
   void withFace(FaceID id,
                 Func func);

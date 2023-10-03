@@ -79,18 +79,14 @@ faceRequester(FTC_FaceID ftcFaceID,
               FT_Pointer requestData,
               FT_Face* faceP)
 {
-  Engine* engine = static_cast<Engine*>(requestData);
-  // `ftcFaceID` is actually an integer
-  // -> First convert pointer to same-width integer, then discard superfluous
-  //    bits (e.g., on x86_64 where pointers are wider than `int`).
-  int val = static_cast<int>(reinterpret_cast<intptr_t>(ftcFaceID));
-  // Make sure this does not cause information loss.
-  Q_ASSERT_X(sizeof(void*) >= sizeof(int),
-             "faceRequester",
-             "Pointer size must be at least the size of int"
-             " in order to treat FTC_FaceID correctly");
+  auto* engine = static_cast<Engine*>(requestData);
+  // The highest bit of ftcFaceID:
+  // 0 - fallback face (for information retrieval),
+  // 1 - rendering face/size
+  // Trim the highest bit
+  auto faceIdInt = reinterpret_cast<uintptr_t>(ftcFaceID) & (UINTPTR_MAX >> 1);
 
-  const FaceID& faceID = engine->faceIDMap_.key(val);
+  const FaceID& faceID = engine->faceIDMap_.key(faceIdInt);
 
   // This is the only place where we have to check the validity of the font
   // index; note that the validity of both the face and named instance index
@@ -179,6 +175,8 @@ Engine::withFace(FaceID id,
 {
   FT_Face face;
   // Search triplet (fontIndex, faceIndex, namedInstanceIndex).
+  // numId doesn't have the highest bit set, so the face is looked up for
+  // retrieving info, thus no rendering / writing should be done in the callback
   auto numId = reinterpret_cast<FTC_FaceID>(faceIDMap_.value(id));
   if (numId)
   {
@@ -292,6 +290,47 @@ Engine::currentFontTricky()
 }
 
 
+FTC_FaceID getFTCIdWithHighestBitSet(FTC_FaceID id)
+{
+  Q_ASSERT_X(sizeof(FTC_FaceID) >= sizeof(uintptr_t), 
+      "getFTCIdWithHighestBitSet", 
+      "FTC_FaceID must be longer than uintptr_t");
+  return reinterpret_cast<FTC_FaceID>(
+      reinterpret_cast<uintptr_t>(id)
+      | (UINTPTR_MAX & ~INTPTR_MAX)
+    );
+}
+
+
+FTC_FaceID getFTCIdWithHighestBitClear(FTC_FaceID id)
+{
+  Q_ASSERT_X(sizeof(FTC_FaceID) >= sizeof(uintptr_t), 
+      "getFTCIdWithHighestBitClear", 
+      "FTC_FaceID must be longer than uintptr_t");
+  return reinterpret_cast<FTC_FaceID>(
+      reinterpret_cast<uintptr_t>(id) & INTPTR_MAX
+    );
+}
+
+
+void
+Engine::loadFontWithFTCId(FTC_FaceID ftcId)
+{
+  if (!FTC_Manager_LookupFace(cacheManager_, ftcId,
+                              &ftFallbackFace_))
+  {
+    scaler_.face_id = getFTCIdWithHighestBitSet(ftcId);
+    if (FTC_Manager_LookupSize(cacheManager_, &scaler_, &ftSize_))
+      ftSize_ = NULL; // Good font, bad size.
+  }
+  else
+  {
+    ftFallbackFace_ = NULL;
+    ftSize_ = NULL;
+  }
+}
+
+
 int
 Engine::loadFont(int fontIndex,
                  long faceIndex,
@@ -307,50 +346,36 @@ Engine::loadFont(int fontIndex,
   auto id = FaceID(fontIndex, faceIndex, namedInstanceIndex);
 
   // Search triplet (fontIndex, faceIndex, namedInstanceIndex).
-  scaler_.face_id = reinterpret_cast<FTC_FaceID>(faceIDMap_.value(id));
-  if (scaler_.face_id)
+  auto face_id = reinterpret_cast<FTC_FaceID>(faceIDMap_.value(id));
+  if (face_id)
   {
     // Found.
-    if (!FTC_Manager_LookupFace(cacheManager_, scaler_.face_id,
-                               &ftFallbackFace_))
-    {
+    loadFontWithFTCId(face_id);
+    if (ftFallbackFace_)
       numGlyphs = ftFallbackFace_->num_glyphs;
-      if (FTC_Manager_LookupSize(cacheManager_, &scaler_, &ftSize_))
-        ftSize_ = NULL; // Good font, bad size.
-    }
-    else
-    {
-      ftFallbackFace_ = NULL;
-      ftSize_ = NULL;
-    }
   }
   else if (fontIndex >= 0)
   {
-    if (faceCounter_ >= INT_MAX) // Prevent overflow.
+    if (faceCounter_ >= INTPTR_MAX) // Prevent overflow.
       return -1;
 
     // Not found; try to load triplet
     // (fontIndex, faceIndex, namedInstanceIndex).
-    scaler_.face_id = reinterpret_cast<FTC_FaceID>(faceCounter_);
+    face_id = reinterpret_cast<FTC_FaceID>(faceCounter_);
     faceIDMap_.insert(id, faceCounter_++);
-
-    if (!FTC_Manager_LookupFace(cacheManager_, scaler_.face_id,
-                                &ftFallbackFace_))
-    {
+    loadFontWithFTCId(face_id);
+    if (ftFallbackFace_)
       numGlyphs = ftFallbackFace_->num_glyphs;
-      if (FTC_Manager_LookupSize(cacheManager_, &scaler_, &ftSize_))
-        ftSize_ = NULL; // Good font, bad size.
-    }
     else
     {
       faceIDMap_.remove(id);
       faceCounter_--;
-      ftFallbackFace_ = NULL;
-      ftSize_ = NULL;
+      scaler_.face_id = 0;
+      face_id = 0;
     }
   }
 
-  imageType_.face_id = scaler_.face_id;
+  imageType_.face_id = face_id ? getFTCIdWithHighestBitSet(face_id) : 0;
 
   if (numGlyphs < 0)
   {
@@ -403,16 +428,17 @@ Engine::reloadFont()
   palette_ = NULL;
   if (!scaler_.face_id)
     return;
-  imageType_.face_id = scaler_.face_id;
+  imageType_.face_id = getFTCIdWithHighestBitSet(scaler_.face_id);
 
   if (FTC_Manager_LookupFace(cacheManager_,
-                             scaler_.face_id,
+                             getFTCIdWithHighestBitClear(scaler_.face_id),
                              &ftFallbackFace_))
   {
     ftFallbackFace_ = NULL;
     ftSize_ = NULL;
     return;
   }
+  scaler_.face_id = getFTCIdWithHighestBitSet(scaler_.face_id);
   if (FTC_Manager_LookupSize(cacheManager_, &scaler_, &ftSize_))
     ftSize_ = NULL; // Good font, bad size.
 }
@@ -1062,6 +1088,9 @@ Engine::switchNamedInstance(int index)
 {
   if (!ftFallbackFace_ || !FT_HAS_MULTIPLE_MASTERS(ftFallbackFace_))
     return;
+  // Writing to ftFallbackFace: since the faces are indexed by named instance
+  // id, it's safe to set the NI of fallback face
+  // This helps the PostScript Name label show the correct name.
   auto err = FT_Set_Named_Instance(ftFallbackFace_, index);
   if (err)
   {
@@ -1070,11 +1099,11 @@ Engine::switchNamedInstance(int index)
   if (ftSize_)
   {
     err = FT_Set_Named_Instance(ftSize_->face, index);
-    if (err)
-    {
-      // XXX error handling
-    }
+  if (err)
+  {
+    // XXX error handling
   }
+}
 }
 
 
