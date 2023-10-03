@@ -1262,7 +1262,7 @@
     grDoneSurface( surface );
     grDoneDevices();
 
-    free            ( multimaster );
+    FT_Done_MM_Var  ( library, multimaster );
     FT_Done_Face    ( face        );
     FT_Done_FreeType( library     );
 
