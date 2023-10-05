@@ -74,6 +74,10 @@ SettingPanelMMGX::applySettings()
   engine_->reloadFont();
   engine_->applyMMGXDesignCoords(currentValues_.data(),
                                  currentValues_.size());
+  if (checkDirty())
+    psNameText_->setPlainText(engine_->currentPostScriptNameWithCoords());
+  else
+    psNameText_->setPlainText(engine_->currentPostScriptNameWithoutCoords());
 }
 
 
@@ -88,6 +92,15 @@ SettingPanelMMGX::checkHidden()
 }
 
 
+bool
+SettingPanelMMGX::checkDirty() const
+{
+  for (auto w : itemWidgets_)
+    if (w->dirty()) return true;
+  return false;
+}
+
+
 void
 SettingPanelMMGX::createLayout()
 {
@@ -96,15 +109,19 @@ SettingPanelMMGX::createLayout()
   resetDefaultButton_ = new QPushButton(tr("Reset Default"), this);
   itemsListWidget_ = new QWidget(this);
   scrollArea_ = new UnboundScrollArea(this);
+  psNameBox_ = new QGroupBox("PostScript Name", this);
+  psNameText_ = new QPlainTextEdit(psNameBox_);
 
   scrollArea_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Ignored);
   scrollArea_->setWidget(itemsListWidget_);
   scrollArea_->setWidgetResizable(true);
   itemsListWidget_->setAutoFillBackground(false);
+  psNameText_->setReadOnly(true);
 
   mainLayout_ = new QVBoxLayout;
   listLayout_ = new QVBoxLayout;
   listWrapperLayout_ = new QVBoxLayout;
+  psNameBoxLayout_ = new QVBoxLayout;
 
   listLayout_->setSpacing(0);
   listLayout_->setContentsMargins(0, 0, 0, 0);
@@ -115,10 +132,16 @@ SettingPanelMMGX::createLayout()
   listWrapperLayout_->addLayout(listLayout_);
   listWrapperLayout_->addStretch(1);
 
+  psNameText_->setMaximumHeight(50);
+  psNameText_->setMinimumHeight(50);
+  psNameBox_->setLayout(psNameBoxLayout_);
+  psNameBoxLayout_->addWidget(psNameText_);
+
   mainLayout_->addWidget(showHiddenCheckBox_);
   mainLayout_->addWidget(groupingCheckBox_);
   mainLayout_->addWidget(resetDefaultButton_);
-  mainLayout_->addWidget(scrollArea_, 1);
+  mainLayout_->addWidget(scrollArea_, 2);
+  mainLayout_->addWidget(psNameBox_, 0);
 
   setLayout(mainLayout_);
 }
@@ -169,7 +192,7 @@ SettingPanelMMGX::resetDefaultClicked()
 {
   for (auto w : itemWidgets_)
     w->resetDefault();
-
+  
   retrieveValues();
   emit mmgxCoordsChanged();
 }
@@ -234,6 +257,7 @@ void
 MMGXSettingItem::setValue(FT_Fixed value)
 {
   actualValue_ = value;
+  dirty_ = true;
   updateSlider();
   updateLineEdit();
 }
@@ -243,6 +267,7 @@ void
 MMGXSettingItem::resetDefault()
 {
   setValue(static_cast<FT_Fixed>(axisInfo_.def * 65536.0));
+  dirty_ = false;
 }
 
 
@@ -305,6 +330,7 @@ MMGXSettingItem::sliderValueChanged()
                  * (axisInfo_.maximum - axisInfo_.minimum)
                + axisInfo_.minimum;
   actualValue_ = static_cast<FT_Fixed>(value * 65536.0);
+  dirty_ = true;
 
   if (axisInfo_.isMM)
     actualValue_ = FT_RoundFix(actualValue_);
@@ -326,6 +352,7 @@ MMGXSettingItem::lineEditChanged()
   }
 
   actualValue_ = static_cast<FT_Fixed>(newValue / 65536.0);
+  dirty_ = true;
 
   updateSlider();
   emit valueChanged();

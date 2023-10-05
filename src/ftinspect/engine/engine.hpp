@@ -129,6 +129,14 @@ public:
   int currentFontType() const { return fontType_; }
   const QString& currentFamilyName() { return curFamilyName_; }
   const QString& currentStyleName() { return curStyleName_; }
+  const QString& currentPostScriptNameWithoutCoords()
+  {
+    return curPostScriptNameWithoutCoords_;
+  }
+  const QString& currentPostScriptNameWithCoords()
+  {
+    return curPostScriptNameWithCoords_;
+  }
   int currentFontNumberOfGlyphs() { return curNumGlyphs_; }
 
   std::vector<PaletteInfo>& currentFontPalettes() { return curPaletteInfos_; }
@@ -235,6 +243,8 @@ private:
   int fontType_ = FontType_Other;
   QString curFamilyName_;
   QString curStyleName_;
+  QString curPostScriptNameWithoutCoords_;
+  QString curPostScriptNameWithCoords_;
   int curNumGlyphs_ = -1;
   std::vector<CharMapInfo> curCharMaps_;
   std::vector<PaletteInfo> curPaletteInfos_;

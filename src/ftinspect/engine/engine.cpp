@@ -392,6 +392,12 @@ Engine::loadFont(int fontIndex,
   {
     curFamilyName_ = QString(ftFallbackFace_->family_name);
     curStyleName_ = QString(ftFallbackFace_->style_name);
+    auto* psName = FT_Get_Postscript_Name(ftFallbackFace_);
+    if (psName)
+      curPostScriptNameWithoutCoords_ = psName;
+    else
+      curPostScriptNameWithoutCoords_ = QString();
+    curPostScriptNameWithCoords_ = curPostScriptNameWithoutCoords_;
 
     const char* moduleName = FT_FACE_DRIVER_NAME(ftFallbackFace_);
 
@@ -873,6 +879,9 @@ Engine::applyMMGXDesignCoords(FT_Fixed* coords,
   FT_Set_Var_Design_Coordinates(ftSize_->face,
                                 static_cast<unsigned>(count),
                                 coords);
+  auto* psName = FT_Get_Postscript_Name(ftSize_->face);
+  if (psName)
+    curPostScriptNameWithCoords_ = psName;
 }
 
 

@@ -12,11 +12,13 @@
 #include <QCheckBox>
 #include <QDoubleValidator>
 #include <QFrame>
+#include <QGroupBox>
 #include <QGridLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QPlainTextEdit>
 #include <QSlider>
 #include <QToolButton>
 #include <QWidget>
@@ -40,6 +42,7 @@ public:
   void reloadFont();
   void applySettings();
   void checkHidden();
+  bool checkDirty() const;
   std::vector<FT_Fixed>& mmgxCoords() { return currentValues_; }
 
 signals:
@@ -53,11 +56,14 @@ private:
   QPushButton* resetDefaultButton_;
   QWidget* itemsListWidget_;
   UnboundScrollArea* scrollArea_;
+  QGroupBox* psNameBox_;
+  QPlainTextEdit* psNameText_;
   std::vector<MMGXSettingItem*> itemWidgets_;
 
   QVBoxLayout* mainLayout_;
   QVBoxLayout* listLayout_;
   QVBoxLayout* listWrapperLayout_;
+  QVBoxLayout* psNameBoxLayout_;
 
   std::vector<FT_Fixed> currentValues_;
   std::vector<MMGXAxisInfo> currentAxes_;
@@ -83,6 +89,7 @@ public:
 
   void updateInfo(MMGXAxisInfo& info);
   FT_Fixed value() { return actualValue_; }
+  bool dirty() { return dirty_; }
   void setValue(FT_Fixed value);
   void resetDefault();
 
@@ -100,6 +107,7 @@ private:
 
   FT_Fixed actualValue_;
   MMGXAxisInfo axisInfo_;
+  bool dirty_ = false;
 
   void createLayout();
   void createConnections();
